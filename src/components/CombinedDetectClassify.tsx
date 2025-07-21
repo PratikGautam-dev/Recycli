@@ -80,6 +80,80 @@ async function classifyWithHuggingFaceZeroShot(objectClass: string): Promise<str
   }
 }
 
+// Static recycling info for common items
+const RECYCLING_GUIDES: Record<string, {
+  tips: string[],
+  creative: string[],
+  fact: string
+}> = {
+  cardboard: {
+    tips: [
+      'Flatten boxes before recycling.',
+      'Keep cardboard dry and clean.',
+      'Remove tape and labels if possible.'
+    ],
+    creative: [
+      'Use for crafts or kids projects.',
+      'Make organizers or storage bins.',
+      'Compost as brown material.'
+    ],
+    fact: 'Recycling one ton of cardboard saves over 9 cubic yards of landfill space.'
+  },
+  bottle: {
+    tips: [
+      'Rinse bottles before recycling.',
+      'Remove caps and labels.',
+      'Check if your local center accepts this type.'
+    ],
+    creative: [
+      'Make planters or vases.',
+      'Create DIY lamps or lights.',
+      'Use for storage or crafts.'
+    ],
+    fact: 'Recycling one plastic bottle saves enough energy to power a 60-watt light bulb for 6 hours.'
+  },
+  can: {
+    tips: [
+      'Rinse cans before recycling.',
+      'Crush to save space.',
+      'Remove labels if possible.'
+    ],
+    creative: [
+      'Make pencil holders or organizers.',
+      'Create lanterns or candle holders.',
+      'Use in garden as plant markers.'
+    ],
+    fact: 'Recycling one aluminum can saves enough energy to run a TV for 3 hours.'
+  }
+};
+
+function getRecyclingGuide(label: string) {
+  label = label.toLowerCase();
+  if (label.includes('cardboard')) return RECYCLING_GUIDES.cardboard;
+  if (label.includes('bottle')) return RECYCLING_GUIDES.bottle;
+  if (label.includes('can')) return RECYCLING_GUIDES.can;
+  // Default fallback
+  return {
+    tips: ['Check your local recycling guidelines.', 'Keep items clean and dry.'],
+    creative: ['Search online for upcycling ideas for this item.'],
+    fact: 'Recycling helps conserve resources and reduce landfill waste.'
+  };
+}
+
+const YOUTUBE_API_KEY = import.meta.env.VITE_YOUTUBE_API_KEY;
+
+async function fetchYouTubeVideos(query: string): Promise<Array<{title: string, videoId: string, thumbnail: string}>> {
+  const endpoint = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=3&q=${encodeURIComponent(query)}&key=${YOUTUBE_API_KEY}`;
+  const response = await fetch(endpoint);
+  const data = await response.json();
+  if (!response.ok || !data.items) return [];
+  return data.items.map((item: any) => ({
+    title: item.snippet.title,
+    videoId: item.id.videoId,
+    thumbnail: item.snippet.thumbnails.medium.url
+  }));
+}
+
 const CombinedDetectClassify: React.FC = () => {
   const [imageURL, setImageURL] = useState<string | null>(null);
   const [imageHfResult, setImageHfResult] = useState<{label: string, score: number} | null>(null);
@@ -88,8 +162,24 @@ const CombinedDetectClassify: React.FC = () => {
   const [zeroShotResults, setZeroShotResults] = useState<{label: string, score: number}[] | null>(null);
   const [loadingZeroShot, setLoadingZeroShot] = useState(false);
   const [zeroShotError, setZeroShotError] = useState<string | null>(null);
+  const [showRecycleModal, setShowRecycleModal] = useState(false);
   const imageRef = useRef<HTMLImageElement>(null);
   const imageFileRef = useRef<File | null>(null);
+  const [youtubeVideos, setYoutubeVideos] = useState<Array<{title: string, videoId: string, thumbnail: string}>>([]);
+  const [loadingYoutube, setLoadingYoutube] = useState(false);
+
+  // Fetch YouTube videos when modal opens
+  React.useEffect(() => {
+    if (showRecycleModal && imageHfResult) {
+      setLoadingYoutube(true);
+      fetchYouTubeVideos(`how to recycle ${imageHfResult.label}`).then(videos => {
+        setYoutubeVideos(videos);
+        setLoadingYoutube(false);
+      });
+    } else {
+      setYoutubeVideos([]);
+    }
+  }, [showRecycleModal, imageHfResult]);
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -250,6 +340,123 @@ const CombinedDetectClassify: React.FC = () => {
                 </div>
               );
             })}
+          </div>
+        )}
+        {zeroShotResults && zeroShotResults.some(z => z.label === 'recyclable') && (
+          <div style={{ textAlign: 'center', marginTop: 20 }}>
+            <button
+              onClick={() => setShowRecycleModal(true)}
+              style={{
+                background: 'linear-gradient(90deg, #22d3ee 0%, #38bdf8 100%)',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 8,
+                padding: '10px 20px',
+                fontWeight: 600,
+                fontSize: 16,
+                cursor: 'pointer',
+                boxShadow: '0 2px 8px rgba(60,60,120,0.08)',
+                marginTop: 8
+              }}
+            >
+              How can I recycle this?
+            </button>
+          </div>
+        )}
+        {showRecycleModal && imageHfResult && (
+          <div style={{
+            position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
+            background: 'rgba(30,41,59,0.25)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center'
+          }}>
+            <div style={{ background: '#fff', borderRadius: 16, maxWidth: 420, width: '90%', padding: 28, boxShadow: '0 8px 32px rgba(60,60,120,0.18)', position: 'relative' }}>
+              <button
+                onClick={() => setShowRecycleModal(false)}
+                style={{
+                  position: 'absolute',
+                  top: 8,
+                  right: 12,
+                  background: 'none',
+                  border: 'none',
+                  fontSize: 32,
+                  color: '#334155',
+                  cursor: 'pointer',
+                  fontWeight: 900,
+                  width: 40,
+                  height: 40,
+                  borderRadius: '50%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'background 0.2s',
+                }}
+                onMouseOver={e => (e.currentTarget.style.background = '#e0e7ef')}
+                onMouseOut={e => (e.currentTarget.style.background = 'none')}
+                aria-label="Close"
+              >
+                ×
+              </button>
+              <h2 style={{ textAlign: 'center', fontWeight: 700, fontSize: 22, marginBottom: 8, color: '#3b3b5c' }}>
+                How to Recycle: {imageHfResult.label}
+              </h2>
+              {(() => {
+                const guide = getRecyclingGuide(imageHfResult.label);
+                return (
+                  <>
+                    <h4 style={{ color: '#2563eb', marginTop: 18, marginBottom: 6 }}>Practical Tips</h4>
+                    <ul style={{ color: '#334155', marginBottom: 12, paddingLeft: 18 }}>
+                      {guide.tips.map((tip, i) => <li key={i}>{tip}</li>)}
+                    </ul>
+                    <h4 style={{ color: '#059669', marginTop: 14, marginBottom: 6 }}>Creative Reuse Ideas</h4>
+                    <ul style={{ color: '#334155', marginBottom: 12, paddingLeft: 18 }}>
+                      {guide.creative.map((tip, i) => <li key={i}>{tip}</li>)}
+                    </ul>
+                    <a
+                      href={`https://www.google.com/maps/search/recycling+center+near+me`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        display: 'inline-block',
+                        background: 'linear-gradient(90deg, #4f8cff 0%, #38bdf8 100%)',
+                        color: '#fff',
+                        borderRadius: 8,
+                        padding: '8px 18px',
+                        fontWeight: 600,
+                        fontSize: 15,
+                        margin: '12px 0',
+                        textDecoration: 'none',
+                        boxShadow: '0 2px 8px rgba(60,60,120,0.08)'
+                      }}
+                    >
+                      Find a Recycling Center Near Me
+                    </a>
+                    <div style={{ marginTop: 18, color: '#0ea5e9', fontWeight: 600, background: '#e0f2fe', borderRadius: 8, padding: '8px 18px', display: 'inline-block' }}>
+                      {guide.fact}
+                    </div>
+                    <h4 style={{ color: '#eab308', marginTop: 22, marginBottom: 8 }}>YouTube: How to Recycle {imageHfResult.label}</h4>
+                    {loadingYoutube ? (
+                      <div style={{ textAlign: 'center', color: '#64748b', fontWeight: 500 }}>Loading videos...</div>
+                    ) : youtubeVideos.length > 0 ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 8 }}>
+                        {youtubeVideos.map((video, i) => (
+                          <a
+                            key={video.videoId}
+                            href={`https://www.youtube.com/watch?v=${video.videoId}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{ display: 'flex', alignItems: 'center', gap: 12, textDecoration: 'none', background: '#f1f5f9', borderRadius: 8, padding: 8 }}
+                          >
+                            <img src={video.thumbnail} alt={video.title} style={{ width: 80, height: 45, borderRadius: 6, objectFit: 'cover', flexShrink: 0 }} />
+                            <span style={{ color: '#334155', fontWeight: 600, fontSize: 15 }}>{video.title}</span>
+                          </a>
+                        ))}
+                      </div>
+                    ) : (
+                      <div style={{ color: '#64748b', fontWeight: 500 }}>No videos found.</div>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
           </div>
         )}
         {zeroShotError && (
